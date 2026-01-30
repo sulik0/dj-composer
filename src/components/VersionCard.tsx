@@ -1,5 +1,6 @@
 import { Play, Pause, Check, Sparkles, Zap, Waves, Flame } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { useRef, useEffect } from 'react'
 
 export interface DJVersion {
   id: string
@@ -15,6 +16,7 @@ interface VersionCardProps {
   version: DJVersion
   isSelected: boolean
   isPlaying: boolean
+  previewSrc?: string
   onSelect: () => void
   onPlayToggle: () => void
 }
@@ -33,9 +35,20 @@ const styleColors: Record<string, string> = {
   'drum-n-bass': 'from-orange-500 to-red-500',
 }
 
-export function VersionCard({ version, isSelected, isPlaying, onSelect, onPlayToggle }: VersionCardProps) {
+export function VersionCard({ version, isSelected, isPlaying, previewSrc, onSelect, onPlayToggle }: VersionCardProps) {
   const Icon = iconMap[version.icon]
   const gradientClass = styleColors[version.style] || 'from-primary to-accent'
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    if (audioRef.current) {
+      if (isPlaying && previewSrc) {
+        audioRef.current.play().catch(e => console.error("Audio play failed:", e))
+      } else {
+        audioRef.current.pause()
+      }
+    }
+  }, [isPlaying, previewSrc])
 
   return (
     <div
@@ -44,6 +57,7 @@ export function VersionCard({ version, isSelected, isPlaying, onSelect, onPlayTo
         isSelected && "border-primary shadow-glow-primary"
       )}
     >
+      {previewSrc && <audio ref={audioRef} src={previewSrc} loop={false} onEnded={onPlayToggle} />}
       {/* Background gradient decoration */}
       <div className={cn(
         "absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2",

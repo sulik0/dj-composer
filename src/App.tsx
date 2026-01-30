@@ -5,6 +5,7 @@ import { UploadZone } from './components/UploadZone'
 import { VersionCard, type DJVersion } from './components/VersionCard'
 import { GenerationView } from './components/GenerationView'
 import { AudioPlayer } from './components/AudioPlayer'
+import { cn } from './lib/utils'
 
 // Mock DJ versions for demo
 const djVersions: DJVersion[] = [
@@ -50,6 +51,12 @@ function App() {
   const [playingVersion, setPlayingVersion] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<'idle' | 'generating' | 'complete'>('idle')
   const [generationProgress, setGenerationProgress] = useState(0)
+  const [fileId, setFileId] = useState<string | null>(null)
+  const [versionPreviews, setVersionPreviews] = useState<Record<string, string>>({})
+  const [isUploading, setIsUploading] = useState(false)
+  const [finalFileUrl, setFinalFileUrl] = useState<string | null>(null)
+
+  const API_BASE = 'http://localhost:8000'
 
   // Simulate generation progress
   useEffect(() => {
@@ -71,13 +78,6 @@ function App() {
   const canProceedToStep2 = originalFile !== null
   const canProceedToStep3 = selectedVersion !== null
 
-  const handleProceedToStep2 = () => {
-    if (canProceedToStep2) {
-      setStep(2)
-      // Simulate generating preview versions
-    }
-  }
-
   const handleProceedToStep3 = () => {
     if (canProceedToStep3) {
       setStep(3)
@@ -86,14 +86,72 @@ function App() {
     }
   }
 
-  const handleStartGeneration = () => {
+  const handleVersionPlay = async (versionId: string) => {
+    if (playingVersion === versionId) {
+      setPlayingVersion(null)
+      return
+    }
+
+    if (!versionPreviews[versionId]) {
+      try {
+        const version = djVersions.find(v => v.id === versionId)
+        const formData = new FormData()
+        formData.append('file_id', fileId!)
+        formData.append('style', version?.style || 'house')
+        formData.append('target_bpm', version?.bpm.toString() || '124')
+        formData.append('is_preview', 'true')
+
+        const response = await fetch(`${API_BASE}/process`, {
+          method: 'POST',
+          body: formData,
+        })
+        const data = await response.json()
+        const previewUrl = `${API_BASE}/download/${data.output_file}`
+        setVersionPreviews(prev => ({ ...prev, [versionId]: previewUrl }))
+        setPlayingVersion(versionId)
+      } catch (error) {
+        console.error('Preview generation failed:', error)
+      }
+    } else {
+      setPlayingVersion(versionId)
+    }
+  }
+
+  const handleStartGeneration = async () => {
     setGenerationStatus('generating')
     setGenerationProgress(0)
+
+    try {
+      const version = djVersions.find(v => v.id === selectedVersion)
+      const formData = new FormData()
+      formData.append('file_id', fileId!)
+      formData.append('style', version?.style || 'house')
+      formData.append('target_bpm', version?.bpm.toString() || '124')
+      formData.append('is_preview', 'false')
+
+      const response = await fetch(`${API_BASE}/process`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json()
+      setFinalFileUrl(`${API_BASE}/download/${data.output_file}`)
+      setGenerationProgress(100)
+      setGenerationStatus('complete')
+    } catch (error) {
+      console.error('Generation failed:', error)
+      setGenerationStatus('idle')
+    }
   }
 
   const handleDownload = () => {
-    // In real app, trigger download
-    alert('下载功能将在后端集成后启用')
+    if (finalFileUrl) {
+      const link = document.createElement('a')
+      link.href = finalFileUrl
+      link.download = `dj_mix_${selectedVersion}.wav`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
   }
 
   const handleReset = () => {
@@ -104,10 +162,32 @@ function App() {
     setPlayingVersion(null)
     setGenerationStatus('idle')
     setGenerationProgress(0)
+    setFileId(null)
+    setVersionPreviews({})
+    setFinalFileUrl(null)
   }
 
-  const handleVersionPlay = (versionId: string) => {
-    setPlayingVersion(playingVersion === versionId ? null : versionId)
+  const handleProceedToStep2 = async () => {
+    if (canProceedToStep2 && originalFile) {
+      setIsUploading(true)
+      const formData = new FormData()
+      formData.append('file', originalFile)
+      
+      try {
+        const response = await fetch(`${API_BASE}/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+        const data = await response.json()
+        setFileId(data.file_id)
+        setStep(2)
+      } catch (error) {
+        console.error('Upload failed:', error)
+        alert('上传失败，请检查后端服务是否启动')
+      } finally {
+        setIsUploading(false)
+      }
+    }
   }
 
   const selectedVersionData = djVersions.find(v => v.id === selectedVersion)
@@ -173,8 +253,8 @@ function App() {
                 disabled={!canProceedToStep2}
                 className="btn-primary flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
               >
-                <Sparkles className="w-5 h-5" />
-                生成 DJ 版本
+                <Sparkles className={cn("w-5 h-5", isUploading && "animate-spin")} />
+                {isUploading ? '正在上传...' : '生成 DJ 版本'}
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
@@ -210,6 +290,7 @@ function App() {
                   version={version}
                   isSelected={selectedVersion === version.id}
                   isPlaying={playingVersion === version.id}
+                  previewSrc={versionPreviews[version.id]}
                   onSelect={() => setSelectedVersion(version.id)}
                   onPlayToggle={() => handleVersionPlay(version.id)}
                 />
