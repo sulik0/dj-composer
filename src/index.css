@@ -1,0 +1,177 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* DJ/Club Theme - Cyberpunk Neon */
+  --background: 220 20% 6%;
+  --foreground: 220 10% 95%;
+  
+  /* Electric Purple Primary */
+  --primary: 270 80% 60%;
+  --primary-foreground: 0 0% 100%;
+  
+  /* Deep Indigo Secondary */
+  --secondary: 240 50% 15%;
+  --secondary-foreground: 220 10% 90%;
+  
+  /* Cyan Accent */
+  --accent: 180 100% 50%;
+  --accent-foreground: 220 20% 6%;
+  
+  /* Card surfaces */
+  --card: 220 25% 10%;
+  --card-foreground: 220 10% 95%;
+  
+  /* Muted tones */
+  --muted: 220 20% 18%;
+  --muted-foreground: 220 10% 60%;
+  
+  /* Borders */
+  --border: 220 20% 20%;
+  --ring: 270 80% 60%;
+  
+  /* Status colors */
+  --success: 150 80% 45%;
+  --warning: 40 95% 55%;
+  --destructive: 0 80% 55%;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}
+
+/* Audio waveform bars animation */
+@keyframes equalizer {
+  0%, 100% { height: 8px; }
+  25% { height: 24px; }
+  50% { height: 16px; }
+  75% { height: 32px; }
+}
+
+.equalizer-bar {
+  animation: equalizer 0.8s ease-in-out infinite;
+}
+
+.equalizer-bar:nth-child(1) { animation-delay: 0s; }
+.equalizer-bar:nth-child(2) { animation-delay: 0.1s; }
+.equalizer-bar:nth-child(3) { animation-delay: 0.2s; }
+.equalizer-bar:nth-child(4) { animation-delay: 0.3s; }
+.equalizer-bar:nth-child(5) { animation-delay: 0.4s; }
+
+/* Glowing text effect */
+.text-glow {
+  text-shadow: 0 0 10px hsl(var(--primary) / 0.5),
+               0 0 20px hsl(var(--primary) / 0.3),
+               0 0 30px hsl(var(--primary) / 0.2);
+}
+
+.text-glow-accent {
+  text-shadow: 0 0 10px hsl(var(--accent) / 0.5),
+               0 0 20px hsl(var(--accent) / 0.3);
+}
+
+/* Glass morphism */
+.glass {
+  background: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+/* Gradient border */
+.gradient-border {
+  position: relative;
+  background: hsl(var(--card));
+  border-radius: 16px;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 17px;
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  z-index: -1;
+  opacity: 0.5;
+}
+
+/* Vinyl record spin */
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.vinyl-spinning {
+  animation: vinyl-spin 2s linear infinite;
+}
+
+/* Progress bar glow */
+.progress-glow {
+  box-shadow: 0 0 10px hsl(var(--primary) / 0.6),
+              0 0 20px hsl(var(--primary) / 0.3);
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300
+           bg-gradient-to-r from-primary to-accent text-primary-foreground
+           hover:shadow-glow-primary hover:scale-105 active:scale-95;
+  }
+  
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-300
+           bg-secondary text-secondary-foreground border border-border
+           hover:bg-muted hover:border-primary/50;
+  }
+  
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200
+           text-muted-foreground hover:text-foreground hover:bg-muted/50;
+  }
+  
+  .card {
+    @apply bg-card rounded-2xl border border-border p-6
+           transition-all duration-300 hover:border-primary/30;
+  }
+  
+  .card-interactive {
+    @apply card cursor-pointer hover:shadow-glow-primary hover:scale-[1.02];
+  }
+  
+  .input {
+    @apply w-full px-4 py-3 rounded-xl bg-muted border border-border
+           text-foreground placeholder:text-muted-foreground
+           focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20
+           transition-all duration-200;
+  }
+}
