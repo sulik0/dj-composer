@@ -11,12 +11,16 @@ from rq import get_current_job
 from .storage import OssStorage
 
 
-def _update_progress(value: int) -> None:
+def _update_progress(value: int, progress_cb=None) -> None:
     job = get_current_job()
     if not job:
+        if progress_cb:
+            progress_cb(value)
         return
     job.meta["progress"] = value
     job.save_meta()
+    if progress_cb:
+        progress_cb(value)
 
 
 def _download(url: str, dest_path: str) -> None:
@@ -68,6 +72,7 @@ def process_remix(
     style_text: str,
     preset_style: Optional[str] = None,
     output_format: str = "mp3",
+    progress_cb=None,
 ) -> dict:
     job = get_current_job()
     if job:
@@ -83,17 +88,17 @@ def process_remix(
     with tempfile.TemporaryDirectory() as tmpdir:
         original_path = os.path.join(tmpdir, "original.wav")
         reference_path = os.path.join(tmpdir, "reference.wav")
-        _update_progress(5)
+        _update_progress(5, progress_cb)
         _download(original_url, original_path)
         if reference_url:
             _download(reference_url, reference_path)
-        _update_progress(15)
+        _update_progress(15, progress_cb)
 
         y, sr = librosa.load(original_path)
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         key = _estimate_key(y, sr)
         duration = int(librosa.get_duration(y=y, sr=sr))
-        _update_progress(25)
+        _update_progress(25, progress_cb)
 
         stems_dir = os.path.join(tmpdir, "stems")
         os.makedirs(stems_dir, exist_ok=True)
@@ -102,7 +107,7 @@ def process_remix(
         no_vocals_path = _find_file(stems_dir, "no_vocals.wav")
         if not no_vocals_path:
             raise RuntimeError("Demucs output missing no_vocals.wav")
-        _update_progress(40)
+        _update_progress(40, progress_cb)
 
         style_hint = preset_style or "DJ"
         reference_hint = "Use the reference track vibe." if reference_url else ""
@@ -115,7 +120,7 @@ def process_remix(
         fx_path = os.path.join(tmpdir, "fx.mp3")
         _generate_sound_effect(api_key, drum_prompt, duration=8, output_path=drums_path)
         _generate_sound_effect(api_key, fx_prompt, duration=4, output_path=fx_path)
-        _update_progress(60)
+        _update_progress(60, progress_cb)
 
         remix_wav = os.path.join(tmpdir, "remix.wav")
         remix_mp3 = os.path.join(tmpdir, "remix.mp3")
@@ -141,7 +146,7 @@ def process_remix(
             remix_wav,
         ]
         _run_cmd(ffmpeg_cmd)
-        _update_progress(75)
+        _update_progress(75, progress_cb)
 
         output_path = remix_mp3
         output_ext = "mp3"
@@ -150,11 +155,11 @@ def process_remix(
             output_ext = "wav"
         else:
             _run_cmd(["ffmpeg", "-y", "-i", remix_wav, "-codec:a", "libmp3lame", "-b:a", "192k", remix_mp3])
-        _update_progress(85)
+        _update_progress(85, progress_cb)
 
         output_key = f"outputs/{uuid.uuid4()}.{output_ext}"
         output_url = storage.upload_file(output_path, output_key)
-        _update_progress(100)
+        _update_progress(100, progress_cb)
 
     return {
         "output_url": output_url,

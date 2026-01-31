@@ -72,6 +72,10 @@ python -m backend.worker
 
 > 需要系统已安装 ffmpeg，且可执行 `demucs` 命令。
 
+### 无 Redis 的本地模式
+
+如果未设置 `REDIS_URL`，后端会自动切换为本地队列模式（单机单进程，适合开发验证）。
+
 ## 项目结构
 
 ```
