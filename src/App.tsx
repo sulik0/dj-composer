@@ -52,28 +52,45 @@ function App() {
   const [generationStatus, setGenerationStatus] = useState<'idle' | 'generating' | 'complete'>('idle')
   const [generationProgress, setGenerationProgress] = useState(0)
   const [fileId, setFileId] = useState<string | null>(null)
+  const [referenceFileId, setReferenceFileId] = useState<string | null>(null)
   const [versionPreviews, setVersionPreviews] = useState<Record<string, string>>({})
   const [isUploading, setIsUploading] = useState(false)
   const [finalFileUrl, setFinalFileUrl] = useState<string | null>(null)
+  const [generationJobId, setGenerationJobId] = useState<string | null>(null)
+  const [isGeneratingPreviews, setIsGeneratingPreviews] = useState(false)
 
   const API_BASE = 'http://localhost:8000'
 
-  // Simulate generation progress
+  // Poll backend job status for real progress
   useEffect(() => {
-    if (generationStatus === 'generating') {
+    if (generationStatus === 'generating' && generationJobId) {
       const interval = setInterval(() => {
-        setGenerationProgress(prev => {
-          if (prev >= 100) {
-            setGenerationStatus('complete')
-            clearInterval(interval)
-            return 100
-          }
-          return prev + Math.random() * 8 + 2
-        })
+        fetch(`${API_BASE}/process/status/${generationJobId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 'error') {
+              console.error('Generation failed:', data.error)
+              setGenerationStatus('idle')
+              clearInterval(interval)
+              return
+            }
+            if (typeof data.progress === 'number') {
+              setGenerationProgress(data.progress)
+            }
+            if (data.status === 'complete' && data.output_file) {
+              setFinalFileUrl(`${API_BASE}/download/${data.output_file}`)
+              setGenerationProgress(100)
+              setGenerationStatus('complete')
+              clearInterval(interval)
+            }
+          })
+          .catch(error => {
+            console.error('Status polling failed:', error)
+          })
       }, 300)
       return () => clearInterval(interval)
     }
-  }, [generationStatus])
+  }, [generationStatus, generationJobId, API_BASE])
 
   const canProceedToStep2 = originalFile !== null
   const canProceedToStep3 = selectedVersion !== null
@@ -83,6 +100,7 @@ function App() {
       setStep(3)
       setGenerationStatus('idle')
       setGenerationProgress(0)
+      setGenerationJobId(null)
     }
   }
 
@@ -100,15 +118,28 @@ function App() {
         formData.append('style', version?.style || 'house')
         formData.append('target_bpm', version?.bpm.toString() || '124')
         formData.append('is_preview', 'true')
+        if (referenceFileId) {
+          formData.append('reference_file_id', referenceFileId)
+        }
 
-        const response = await fetch(`${API_BASE}/process`, {
+        const response = await fetch(`${API_BASE}/process/start`, {
           method: 'POST',
           body: formData,
         })
-        const data = await response.json()
-        const previewUrl = `${API_BASE}/download/${data.output_file}`
-        setVersionPreviews(prev => ({ ...prev, [versionId]: previewUrl }))
-        setPlayingVersion(versionId)
+        const { job_id } = await response.json()
+        const previewInterval = setInterval(async () => {
+          const statusResponse = await fetch(`${API_BASE}/process/status/${job_id}`)
+          const statusData = await statusResponse.json()
+          if (statusData.status === 'complete' && statusData.output_file) {
+            const previewUrl = `${API_BASE}/download/${statusData.output_file}`
+            setVersionPreviews(prev => ({ ...prev, [versionId]: previewUrl }))
+            setPlayingVersion(versionId)
+            clearInterval(previewInterval)
+          } else if (statusData.status === 'error') {
+            console.error('Preview generation failed:', statusData.error)
+            clearInterval(previewInterval)
+          }
+        }, 300)
       } catch (error) {
         console.error('Preview generation failed:', error)
       }
@@ -128,15 +159,16 @@ function App() {
       formData.append('style', version?.style || 'house')
       formData.append('target_bpm', version?.bpm.toString() || '124')
       formData.append('is_preview', 'false')
+      if (referenceFileId) {
+        formData.append('reference_file_id', referenceFileId)
+      }
 
-      const response = await fetch(`${API_BASE}/process`, {
+      const response = await fetch(`${API_BASE}/process/start`, {
         method: 'POST',
         body: formData,
       })
       const data = await response.json()
-      setFinalFileUrl(`${API_BASE}/download/${data.output_file}`)
-      setGenerationProgress(100)
-      setGenerationStatus('complete')
+      setGenerationJobId(data.job_id)
     } catch (error) {
       console.error('Generation failed:', error)
       setGenerationStatus('idle')
@@ -163,8 +195,10 @@ function App() {
     setGenerationStatus('idle')
     setGenerationProgress(0)
     setFileId(null)
+    setReferenceFileId(null)
     setVersionPreviews({})
     setFinalFileUrl(null)
+    setGenerationJobId(null)
   }
 
   const handleProceedToStep2 = async () => {
@@ -172,6 +206,9 @@ function App() {
       setIsUploading(true)
       const formData = new FormData()
       formData.append('file', originalFile)
+      if (referenceFile) {
+        formData.append('reference_file', referenceFile)
+      }
       
       try {
         const response = await fetch(`${API_BASE}/upload`, {
@@ -180,12 +217,36 @@ function App() {
         })
         const data = await response.json()
         setFileId(data.file_id)
+        setReferenceFileId(data.reference_file_id || null)
         setStep(2)
+        setIsGeneratingPreviews(true)
+        const styles = djVersions.map(v => v.style).join(',')
+        const previewForm = new FormData()
+        previewForm.append('file_id', data.file_id)
+        previewForm.append('styles', styles)
+        previewForm.append('is_preview', 'true')
+        if (data.reference_file_id) {
+          previewForm.append('reference_file_id', data.reference_file_id)
+        }
+        const previewResponse = await fetch(`${API_BASE}/process/batch`, {
+          method: 'POST',
+          body: previewForm,
+        })
+        const previewData = await previewResponse.json()
+        const outputs = previewData.outputs || {}
+        const previewUrls: Record<string, string> = {}
+        djVersions.forEach(version => {
+          if (outputs[version.style]) {
+            previewUrls[version.id] = `${API_BASE}/download/${outputs[version.style]}`
+          }
+        })
+        setVersionPreviews(previewUrls)
       } catch (error) {
         console.error('Upload failed:', error)
         alert('上传失败，请检查后端服务是否启动')
       } finally {
         setIsUploading(false)
+        setIsGeneratingPreviews(false)
       }
     }
   }
@@ -279,6 +340,9 @@ function App() {
                 <p className="text-muted-foreground">
                   试听每个版本的 30 秒预览，选择最满意的一个生成完整版
                 </p>
+                {isGeneratingPreviews && (
+                  <p className="text-primary text-sm mt-2">正在生成全部预览...</p>
+                )}
               </div>
               <div className="w-24" /> {/* Spacer for centering */}
             </div>
