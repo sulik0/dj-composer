@@ -6,3 +6,11 @@ pedalboard
 numpy
 python-multipart
 soundfile
+requests
+oss2
+redis
+rq
+demucs
+torch
+torchaudio
+python-dotenv

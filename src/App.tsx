@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, Sparkles, ArrowLeft } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, ChevronRight, Sparkles } from 'lucide-react'
 import { Header } from './components/Header'
 import { UploadZone } from './components/UploadZone'
 import { VersionCard, type DJVersion } from './components/VersionCard'
@@ -7,7 +7,6 @@ import { GenerationView } from './components/GenerationView'
 import { AudioPlayer } from './components/AudioPlayer'
 import { cn } from './lib/utils'
 
-// Mock DJ versions for demo
 const djVersions: DJVersion[] = [
   {
     id: 'house',
@@ -47,28 +46,25 @@ function App() {
   const [step, setStep] = useState(1)
   const [originalFile, setOriginalFile] = useState<File | null>(null)
   const [referenceFile, setReferenceFile] = useState<File | null>(null)
+  const [styleText, setStyleText] = useState('')
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
-  const [playingVersion, setPlayingVersion] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<'idle' | 'generating' | 'complete'>('idle')
   const [generationProgress, setGenerationProgress] = useState(0)
-  const [fileId, setFileId] = useState<string | null>(null)
-  const [referenceFileId, setReferenceFileId] = useState<string | null>(null)
-  const [versionPreviews, setVersionPreviews] = useState<Record<string, string>>({})
+  const [originalUrl, setOriginalUrl] = useState<string | null>(null)
+  const [referenceUrl, setReferenceUrl] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [finalFileUrl, setFinalFileUrl] = useState<string | null>(null)
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
-  const [isGeneratingPreviews, setIsGeneratingPreviews] = useState(false)
 
   const API_BASE = 'http://localhost:8000'
 
-  // Poll backend job status for real progress
   useEffect(() => {
     if (generationStatus === 'generating' && generationJobId) {
       const interval = setInterval(() => {
-        fetch(`${API_BASE}/process/status/${generationJobId}`)
+        fetch(`${API_BASE}/tasks/status/${generationJobId}`)
           .then(res => res.json())
           .then(data => {
-            if (data.status === 'error') {
+            if (data.status === 'failed') {
               console.error('Generation failed:', data.error)
               setGenerationStatus('idle')
               clearInterval(interval)
@@ -77,8 +73,8 @@ function App() {
             if (typeof data.progress === 'number') {
               setGenerationProgress(data.progress)
             }
-            if (data.status === 'complete' && data.output_file) {
-              setFinalFileUrl(`${API_BASE}/download/${data.output_file}`)
+            if (data.status === 'finished' && data.output_url) {
+              setFinalFileUrl(data.output_url)
               setGenerationProgress(100)
               setGenerationStatus('complete')
               clearInterval(interval)
@@ -87,12 +83,12 @@ function App() {
           .catch(error => {
             console.error('Status polling failed:', error)
           })
-      }, 300)
+      }, 1000)
       return () => clearInterval(interval)
     }
   }, [generationStatus, generationJobId, API_BASE])
 
-  const canProceedToStep2 = originalFile !== null
+  const canProceedToStep2 = originalFile !== null && styleText.trim().length > 0
   const canProceedToStep3 = selectedVersion !== null
 
   const handleProceedToStep3 = () => {
@@ -104,71 +100,25 @@ function App() {
     }
   }
 
-  const handleVersionPlay = async (versionId: string) => {
-    if (playingVersion === versionId) {
-      setPlayingVersion(null)
-      return
-    }
-
-    if (!versionPreviews[versionId]) {
-      try {
-        const version = djVersions.find(v => v.id === versionId)
-        const formData = new FormData()
-        formData.append('file_id', fileId!)
-        formData.append('style', version?.style || 'house')
-        formData.append('target_bpm', version?.bpm.toString() || '124')
-        formData.append('is_preview', 'true')
-        if (referenceFileId) {
-          formData.append('reference_file_id', referenceFileId)
-        }
-
-        const response = await fetch(`${API_BASE}/process/start`, {
-          method: 'POST',
-          body: formData,
-        })
-        const { job_id } = await response.json()
-        const previewInterval = setInterval(async () => {
-          const statusResponse = await fetch(`${API_BASE}/process/status/${job_id}`)
-          const statusData = await statusResponse.json()
-          if (statusData.status === 'complete' && statusData.output_file) {
-            const previewUrl = `${API_BASE}/download/${statusData.output_file}`
-            setVersionPreviews(prev => ({ ...prev, [versionId]: previewUrl }))
-            setPlayingVersion(versionId)
-            clearInterval(previewInterval)
-          } else if (statusData.status === 'error') {
-            console.error('Preview generation failed:', statusData.error)
-            clearInterval(previewInterval)
-          }
-        }, 300)
-      } catch (error) {
-        console.error('Preview generation failed:', error)
-      }
-    } else {
-      setPlayingVersion(versionId)
-    }
-  }
-
   const handleStartGeneration = async () => {
     setGenerationStatus('generating')
     setGenerationProgress(0)
 
     try {
       const version = djVersions.find(v => v.id === selectedVersion)
-      const formData = new FormData()
-      formData.append('file_id', fileId!)
-      formData.append('style', version?.style || 'house')
-      formData.append('target_bpm', version?.bpm.toString() || '124')
-      formData.append('is_preview', 'false')
-      if (referenceFileId) {
-        formData.append('reference_file_id', referenceFileId)
-      }
-
-      const response = await fetch(`${API_BASE}/process/start`, {
+      const response = await fetch(`${API_BASE}/tasks/create`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          original_url: originalUrl,
+          reference_url: referenceUrl,
+          style_text: styleText,
+          preset_style: version?.style || undefined,
+          output_format: 'mp3',
+        }),
       })
       const data = await response.json()
-      setGenerationJobId(data.job_id)
+      setGenerationJobId(data.task_id)
     } catch (error) {
       console.error('Generation failed:', error)
       setGenerationStatus('idle')
@@ -179,7 +129,7 @@ function App() {
     if (finalFileUrl) {
       const link = document.createElement('a')
       link.href = finalFileUrl
-      link.download = `dj_mix_${selectedVersion}.wav`
+      link.download = `dj_remix_${selectedVersion || 'mix'}.mp3`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -190,63 +140,62 @@ function App() {
     setStep(1)
     setOriginalFile(null)
     setReferenceFile(null)
+    setStyleText('')
     setSelectedVersion(null)
-    setPlayingVersion(null)
     setGenerationStatus('idle')
     setGenerationProgress(0)
-    setFileId(null)
-    setReferenceFileId(null)
-    setVersionPreviews({})
+    setOriginalUrl(null)
+    setReferenceUrl(null)
     setFinalFileUrl(null)
     setGenerationJobId(null)
+  }
+
+  const signUpload = async (file: File) => {
+    const response = await fetch(`${API_BASE}/upload/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, content_type: file.type || 'application/octet-stream' }),
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || '上传签名失败')
+    }
+    return response.json()
+  }
+
+  const putUpload = async (uploadUrl: string, headers: Record<string, string>, file: File) => {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: file,
+    })
+    if (!res.ok) {
+      throw new Error('上传到存储失败')
+    }
   }
 
   const handleProceedToStep2 = async () => {
     if (canProceedToStep2 && originalFile) {
       setIsUploading(true)
-      const formData = new FormData()
-      formData.append('file', originalFile)
-      if (referenceFile) {
-        formData.append('reference_file', referenceFile)
-      }
-      
       try {
-        const response = await fetch(`${API_BASE}/upload`, {
-          method: 'POST',
-          body: formData,
-        })
-        const data = await response.json()
-        setFileId(data.file_id)
-        setReferenceFileId(data.reference_file_id || null)
-        setStep(2)
-        setIsGeneratingPreviews(true)
-        const styles = djVersions.map(v => v.style).join(',')
-        const previewForm = new FormData()
-        previewForm.append('file_id', data.file_id)
-        previewForm.append('styles', styles)
-        previewForm.append('is_preview', 'true')
-        if (data.reference_file_id) {
-          previewForm.append('reference_file_id', data.reference_file_id)
+        const originalSigned = await signUpload(originalFile)
+        await putUpload(originalSigned.upload_url, originalSigned.headers, originalFile)
+        setOriginalUrl(originalSigned.file_url)
+
+        if (referenceFile) {
+          const referenceSigned = await signUpload(referenceFile)
+          await putUpload(referenceSigned.upload_url, referenceSigned.headers, referenceFile)
+          setReferenceUrl(referenceSigned.file_url)
+        } else {
+          setReferenceUrl(null)
         }
-        const previewResponse = await fetch(`${API_BASE}/process/batch`, {
-          method: 'POST',
-          body: previewForm,
-        })
-        const previewData = await previewResponse.json()
-        const outputs = previewData.outputs || {}
-        const previewUrls: Record<string, string> = {}
-        djVersions.forEach(version => {
-          if (outputs[version.style]) {
-            previewUrls[version.id] = `${API_BASE}/download/${outputs[version.style]}`
-          }
-        })
-        setVersionPreviews(previewUrls)
+
+        setStep(2)
       } catch (error) {
         console.error('Upload failed:', error)
         alert('上传失败，请检查后端服务是否启动')
       } finally {
         setIsUploading(false)
-        setIsGeneratingPreviews(false)
       }
     }
   }
@@ -255,7 +204,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Decorative background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />
@@ -265,15 +213,12 @@ function App() {
       <Header step={step} />
 
       <main className="relative max-w-6xl mx-auto px-6 py-12">
-        {/* Step 1: Upload */}
         {step === 1 && (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="text-center mb-12">
-              <h2 className="font-display font-bold text-4xl mb-4 text-glow">
-                上传你的音乐
-              </h2>
+              <h2 className="font-display font-bold text-4xl mb-4 text-glow">上传你的音乐</h2>
               <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-                上传原始音乐，AI 将自动分析并生成多种 DJ 混音版本供你选择
+                上传原始音乐与风格描述，系统将自动生成 DJ Remix
               </p>
             </div>
 
@@ -295,18 +240,25 @@ function App() {
               />
             </div>
 
-            {/* Original file player preview */}
             {originalFile && (
               <div className="max-w-md mx-auto mt-8">
                 <div className="card">
-                  <AudioPlayer
-                    src={URL.createObjectURL(originalFile)}
-                    title={originalFile.name}
-                    subtitle="原始音频预览"
-                  />
+                  <AudioPlayer src={URL.createObjectURL(originalFile)} title={originalFile.name} subtitle="原始音频预览" />
                 </div>
               </div>
             )}
+
+            <div className="max-w-2xl mx-auto">
+              <div className="card">
+                <label className="block text-sm text-muted-foreground mb-2">风格描述</label>
+                <textarea
+                  value={styleText}
+                  onChange={e => setStyleText(e.target.value)}
+                  placeholder="例如：复古 House，温暖低频，带一点 Disco 氛围"
+                  className="w-full min-h-[120px] bg-transparent border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
 
             <div className="flex justify-center mt-8">
               <button
@@ -314,7 +266,7 @@ function App() {
                 disabled={!canProceedToStep2}
                 className="btn-primary flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
               >
-                <Sparkles className={cn("w-5 h-5", isUploading && "animate-spin")} />
+                <Sparkles className={cn('w-5 h-5', isUploading && 'animate-spin')} />
                 {isUploading ? '正在上传...' : '生成 DJ 版本'}
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -322,29 +274,18 @@ function App() {
           </div>
         )}
 
-        {/* Step 2: Select Version */}
         {step === 2 && (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center justify-between mb-8">
-              <button 
-                onClick={() => setStep(1)}
-                className="btn-ghost flex items-center gap-2"
-              >
+              <button onClick={() => setStep(1)} className="btn-ghost flex items-center gap-2">
                 <ArrowLeft className="w-4 h-4" />
                 返回上传
               </button>
               <div className="text-center flex-1">
-                <h2 className="font-display font-bold text-3xl mb-2">
-                  选择你喜欢的风格
-                </h2>
-                <p className="text-muted-foreground">
-                  试听每个版本的 30 秒预览，选择最满意的一个生成完整版
-                </p>
-                {isGeneratingPreviews && (
-                  <p className="text-primary text-sm mt-2">正在生成全部预览...</p>
-                )}
+                <h2 className="font-display font-bold text-3xl mb-2">选择基础风格</h2>
+                <p className="text-muted-foreground">系统会结合你的风格描述生成 Remix</p>
               </div>
-              <div className="w-24" /> {/* Spacer for centering */}
+              <div className="w-24" />
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
@@ -353,10 +294,11 @@ function App() {
                   key={version.id}
                   version={version}
                   isSelected={selectedVersion === version.id}
-                  isPlaying={playingVersion === version.id}
-                  previewSrc={versionPreviews[version.id]}
+                  isPlaying={false}
+                  previewSrc={undefined}
                   onSelect={() => setSelectedVersion(version.id)}
-                  onPlayToggle={() => handleVersionPlay(version.id)}
+                  onPlayToggle={() => {}}
+                  previewEnabled={false}
                 />
               ))}
             </div>
@@ -374,14 +316,10 @@ function App() {
           </div>
         )}
 
-        {/* Step 3: Generation */}
         {step === 3 && (
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center mb-8">
-              <button 
-                onClick={() => setStep(2)}
-                className="btn-ghost flex items-center gap-2"
-              >
+              <button onClick={() => setStep(2)} className="btn-ghost flex items-center gap-2">
                 <ArrowLeft className="w-4 h-4" />
                 返回选择
               </button>
@@ -398,7 +336,6 @@ function App() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="relative border-t border-border/50 mt-20">
         <div className="max-w-6xl mx-auto px-6 py-8 text-center text-muted-foreground text-sm">
           <p>DJ Composer - 让每首歌都能成为派对焦点</p>

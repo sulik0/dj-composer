@@ -37,6 +37,41 @@ npm run dev
 npm run build
 ```
 
+## 后端与任务队列
+
+后端处理需要 Redis、FFmpeg、Demucs 与 ElevenLabs API。
+
+### 环境变量
+
+```bash
+# OSS
+export OSS_ENDPOINT="https://oss-cn-xxx.aliyuncs.com"
+export OSS_BUCKET="your-bucket"
+export OSS_ACCESS_KEY_ID="xxx"
+export OSS_ACCESS_KEY_SECRET="xxx"
+export OSS_PUBLIC_BASE_URL="https://your-bucket.oss-cn-xxx.aliyuncs.com"
+
+# Redis
+export REDIS_URL="redis://localhost:6379/0"
+
+# ElevenLabs
+export ELEVENLABS_API_KEY="xxx"
+```
+
+### 启动后端
+
+```bash
+python -m backend.main
+```
+
+### 启动 Worker
+
+```bash
+python -m backend.worker
+```
+
+> 需要系统已安装 ffmpeg，且可执行 `demucs` 命令。
+
 ## 项目结构
 
 ```

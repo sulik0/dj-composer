@@ -19,6 +19,7 @@ interface VersionCardProps {
   previewSrc?: string
   onSelect: () => void
   onPlayToggle: () => void
+  previewEnabled?: boolean
 }
 
 const iconMap = {
@@ -35,7 +36,15 @@ const styleColors: Record<string, string> = {
   'drum-n-bass': 'from-orange-500 to-red-500',
 }
 
-export function VersionCard({ version, isSelected, isPlaying, previewSrc, onSelect, onPlayToggle }: VersionCardProps) {
+export function VersionCard({
+  version,
+  isSelected,
+  isPlaying,
+  previewSrc,
+  onSelect,
+  onPlayToggle,
+  previewEnabled = true,
+}: VersionCardProps) {
   const Icon = iconMap[version.icon]
   const gradientClass = styleColors[version.style] || 'from-primary to-accent'
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -122,16 +131,20 @@ export function VersionCard({ version, isSelected, isPlaying, previewSrc, onSele
           <button
             onClick={(e) => {
               e.stopPropagation()
-              onPlayToggle()
+              if (previewEnabled) {
+                onPlayToggle()
+              }
             }}
+            disabled={!previewEnabled}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all duration-300",
-              isPlaying 
+              isPlaying && previewEnabled
                 ? `bg-gradient-to-r ${gradientClass} text-white shadow-lg` 
-                : "bg-muted hover:bg-muted/80"
+                : "bg-muted hover:bg-muted/80",
+              !previewEnabled && "opacity-60 cursor-not-allowed"
             )}
           >
-            {isPlaying ? (
+            {isPlaying && previewEnabled ? (
               <>
                 <Pause className="w-4 h-4" />
                 暂停试听
@@ -139,7 +152,7 @@ export function VersionCard({ version, isSelected, isPlaying, previewSrc, onSele
             ) : (
               <>
                 <Play className="w-4 h-4 ml-0.5" />
-                试听 30 秒
+                {previewEnabled ? '试听 30 秒' : '预览不可用'}
               </>
             )}
           </button>
